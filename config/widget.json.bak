@@ -1,0 +1,85 @@
+{
+  "version": 1,
+  "nom_affiche": "VÉRA",
+  "fenetre": {
+    "mode_taille": "auto",
+    "largeur_ratio": 0.3333,
+    "hauteur_ratio": 0.2,
+    "largeur_px": 236,
+    "hauteur_px": 203,
+    "min_largeur": 360,
+    "min_hauteur": 180,
+    "max_largeur_ratio": 0.6,
+    "max_hauteur_ratio": 0.5,
+    "ancrage": "bas_droite",
+    "marge_x": 24,
+    "marge_y": 24,
+    "x": 1684,
+    "y": 632,
+    "toujours_devant": false,
+    "visible": true,
+    "reduit": false,
+    "mode_gif_seul": true,
+    "taille_reduite": 96,
+    "marges_internes": 16
+  },
+  "apparence": {
+    "couleur_fond": "#171717",
+    "opacite_fond": 0.88,
+    "image_fond": null,
+    "opacite_image_fond": 0.65,
+    "couleur_contour": "#00E5FF",
+    "epaisseur_contour": 2,
+    "couleur_neon": "#00E5FF",
+    "couleur_neon_secondaire": "#8A5CFF",
+    "intensite_neon": 0.8,
+    "rayon_angles": 18,
+    "halo": {
+      "actif": true,
+      "couleur": "#00E5FF",
+      "intensite": 0.6,
+      "rayon": 40
+    },
+    "ombre": {
+      "actif": true,
+      "couleur": "#000000",
+      "opacite": 0.5,
+      "flou": 24
+    },
+    "transparence_globale": 1.0,
+    "animations": {
+      "actives": true,
+      "vitesse": 1.0,
+      "respiration_halo": true
+    }
+  },
+  "personnage": {
+    "image_statique": "assets/vera_statique.png",
+    "gif_parole": "assets/vera_parole.gif",
+    "expressions": {
+      "ecoute": null,
+      "reflexion": null,
+      "attente": null,
+      "erreur": null
+    },
+    "taille_pourcent": 90,
+    "decalage_x": 0,
+    "decalage_y": 0
+  },
+  "bulle": {
+    "couleur_fond": "#2A2A2E",
+    "opacite_fond": 0.92,
+    "couleur_texte": "#ECECF1",
+    "taille_police": 15,
+    "famille_police": "Segoe UI",
+    "couleur_contour": "#00E5FF",
+    "epaisseur_contour": 1,
+    "rayon_angles": 14,
+    "largeur_pourcent": 70,
+    "hauteur_max_pourcent": 60,
+    "decalage_x": 0,
+    "decalage_y": 0,
+    "caracteres_max": 240,
+    "duree_affichage_apres_parole_ms": 4000
+  }
+}

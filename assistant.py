@@ -30,6 +30,19 @@ try:
 except ImportError:
     VOSK_DISPONIBLE = False
 
+try:
+    from nobel_bridge import bridge as _bridge
+except Exception:
+    class _FauxBridge:
+        def start(self): pass
+        def state(self, nom): pass
+        def speech_start(self, texte): pass
+        def speech_end(self): pass
+        def assistant_started(self): pass
+        def assistant_stopped(self): pass
+        def stop(self): pass
+    _bridge = _FauxBridge()
+
 
 # ==========================================
 # CONFIGURATION
@@ -50,6 +63,7 @@ URL_GEMINI = "https://gemini.google.com/app?hl=fr"
 URL_SPOTIFY_WEB = "https://open.spotify.com"
 URL_ACCUEIL_BRAVE = "https://search.brave.com"
 URL_MOODLE = "https://moodle.3il.fr/my/"
+URL_ADMIN_VERA = "http://localhost:3001"
 
 # Commande "candidature"
 FICHIER_CANDIDATURE = r"C:\Users\nobel\OneDrive\Documents\ELEMENTS\Nob-Candit\lancement.bat"
@@ -70,6 +84,8 @@ PROCESSUS_PROTEGES = {
     "searchhost.exe",
     "startmenuexperiencehost.exe",
     "textinputhost.exe",
+    "python.exe",
+    "pythonw.exe",
 }
 
 # Applications fermees en douceur uniquement (sans /F) pour eviter la perte de donnees
@@ -84,9 +100,11 @@ COMMANDES = [
     ("eteindre", ["eteins", "eteint", "eteindre", "eteins l ordinateur", "eteindre l ordinateur", "arrete l ordinateur"]),
     ("masquer_tout", ["masque tout", "masquer tout", "masque tous", "affiche le bureau", "masque", "bureau"]),
     ("arret", ["arrete toi", "arrete", "au revoir", "stop", "bye bye"]),
+    ("admin", ["admin", "administrateur", "administration", "panneau d administration"]),
+    ("ressources", ["ressources", "ressource", "gestionnaire des taches", "moniteur de ressources"]),
     ("etat", [
         "comment tu vas", "comment vas tu", "comment ca va", "ca va",
-        "tu vas bien", "comment te sens tu", "la forme"
+        "tu vas bien", "comment te sens tu", "la forme","ca","va"
     ]),
     ("bonjour", ["bonjour", "salut", "coucou"]),
     ("heure", ["heure", "quelle heure"]),
@@ -153,19 +171,19 @@ def _construire_grammaire_vosk(modele):
 # ==========================================
 
 reconnaissance = sr.Recognizer()
-reconnaissance.energy_threshold = 300
+reconnaissance.energy_threshold = 250
 reconnaissance.dynamic_energy_threshold = True
 reconnaissance.dynamic_energy_adjustment_damping = 0.15
-reconnaissance.dynamic_energy_ratio = 1.5
-reconnaissance.pause_threshold = 0.55
-reconnaissance.non_speaking_duration = 0.35
-reconnaissance.phrase_threshold = 0.25
+reconnaissance.dynamic_energy_ratio = 1.35
+reconnaissance.pause_threshold = 0.65
+reconnaissance.non_speaking_duration = 0.45
+reconnaissance.phrase_threshold = 0.20
 
 verrou_voix = threading.Lock()
 moteur_piper = None
 modele_vosk = None
 GRAMMAIRE_VOSK_JSON = None
-mode_reconnaissance_en_ligne = True  # Sera ajuste automatiquement au demarrage
+mode_reconnaissance_en_ligne = True
 
 if PIPER_DISPONIBLE and os.path.exists(FICHIER_VOIX_ONNX) and os.path.exists(FICHIER_VOIX_JSON):
     try:
@@ -183,12 +201,11 @@ if VOSK_DISPONIBLE and os.path.exists(DOSSIER_MODELE_VOSK):
         print("Avertissement : impossible de charger Vosk :", erreur_init_vosk)
         modele_vosk = None
 
-# Acces a l'API Windows (gestion des fenetres et des ecrans)
 user32 = ctypes.windll.user32
 kernel32 = ctypes.windll.kernel32
 
 try:
-    user32.SetProcessDPIAware()  # coordonnees en pixels reels
+    user32.SetProcessDPIAware()
 except Exception:
     pass
 
@@ -235,7 +252,6 @@ kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
 # ==========================================
 
 def internet_disponible(timeout=2.0):
-    """Verifie rapidement si une connexion Internet est active."""
     for hote in ("8.8.8.8", "1.1.1.1"):
         try:
             with socket.create_connection((hote, 53), timeout=timeout):
@@ -246,7 +262,6 @@ def internet_disponible(timeout=2.0):
 
 
 def normaliser(texte):
-    """Minuscules, sans accents, sans ponctuation : facilite la comparaison."""
     texte = unicodedata.normalize("NFD", texte.lower())
     texte = "".join(c for c in texte if unicodedata.category(c) != "Mn")
     texte = re.sub(r"[^a-z0-9 ]", " ", texte)
@@ -254,12 +269,10 @@ def normaliser(texte):
 
 
 def contient(texte, expression):
-    """Vrai si l'expression apparait comme mot entier (ou suite de mots entiers)."""
     return re.search(r"\b" + re.escape(expression) + r"\b", texte) is not None
 
 
 def identifier(texte):
-    """Retourne le nom de la commande correspondant au texte, ou None."""
     for nom, declencheurs in COMMANDES:
         if any(contient(texte, d) for d in declencheurs):
             return nom
@@ -274,8 +287,24 @@ MOTS_FEMININS = ["female", "zira", "hortense", "helena", "julie", "amelie", "aud
 
 
 def _parler_secours_sapi5(texte):
-    """Solution de secours hors ligne via Windows SAPI5 si Piper rencontre un souci."""
     moteur = None
+    parole_demarree = False
+    parole_terminee = False
+
+    def _sur_debut(name):
+        nonlocal parole_demarree
+        if not parole_demarree:
+            parole_demarree = True
+            _bridge.speech_start(texte)
+            _bridge.state("speaking")
+
+    def _sur_fin(name, completed):
+        nonlocal parole_terminee
+        if parole_demarree and not parole_terminee:
+            parole_terminee = True
+            _bridge.speech_end()
+            _bridge.state("idle")
+
     try:
         moteur = pyttsx3.init("sapi5")
         moteur.setProperty("rate", 160)
@@ -287,11 +316,21 @@ def _parler_secours_sapi5(texte):
                 moteur.setProperty("voice", voix.id)
                 break
 
+        moteur.connect("started-utterance", _sur_debut)
+        moteur.connect("finished-utterance", _sur_fin)
         moteur.say(texte)
         moteur.runAndWait()
     except Exception as erreur:
         print("Erreur vocale de secours :", erreur)
     finally:
+        if not parole_demarree:
+            parole_demarree = True
+            _bridge.speech_start(texte)
+            _bridge.state("speaking")
+        if not parole_terminee:
+            parole_terminee = True
+            _bridge.speech_end()
+            _bridge.state("idle")
         if moteur is not None:
             try:
                 moteur.stop()
@@ -307,21 +346,39 @@ def parler(texte):
         if moteur_piper is not None:
             audio_pa = None
             flux = None
+            parole_demarree = False
+            parole_terminee = False
+            total_echantillons = 0
+            sample_rate = moteur_piper.config.sample_rate
+            debut_lecture = 0.0
             try:
                 config_synth = SynthesisConfig(speaker_id=SPEAKER_PIPER)
                 audio_pa = pyaudio.PyAudio()
                 flux = audio_pa.open(
                     format=pyaudio.paInt16,
                     channels=1,
-                    rate=moteur_piper.config.sample_rate,
+                    rate=sample_rate,
                     output=True,
                 )
                 for chunk in moteur_piper.synthesize(texte, syn_config=config_synth):
-                    flux.write(chunk.audio_int16_bytes)
+                    donnees = chunk.audio_int16_bytes
+                    if not parole_demarree:
+                        parole_demarree = True
+                        debut_lecture = time.monotonic()
+                        _bridge.speech_start(texte)
+                        _bridge.state("speaking")
+                    total_echantillons += len(donnees) // 2
+                    flux.write(donnees)
                 return
             except Exception as erreur:
                 print("Erreur Piper, bascule sur la voix de secours :", erreur)
             finally:
+                if parole_demarree and sample_rate > 0 and total_echantillons > 0:
+                    duree_attendue = total_echantillons / float(sample_rate)
+                    ecoule = time.monotonic() - debut_lecture
+                    reste = duree_attendue - ecoule
+                    if reste > 0:
+                        time.sleep(reste)
                 if flux is not None:
                     try:
                         flux.stop_stream()
@@ -333,6 +390,10 @@ def parler(texte):
                         audio_pa.terminate()
                     except Exception:
                         pass
+                if parole_demarree and not parole_terminee:
+                    parole_terminee = True
+                    _bridge.speech_end()
+                    _bridge.state("idle")
 
         _parler_secours_sapi5(texte)
 
@@ -342,11 +403,6 @@ def parler(texte):
 # ==========================================
 
 def _transcrire_vosk(audio):
-    """
-    Double passe Vosk locale sur le meme audio :
-    1. Passe grammaire restreinte : reconnait avec precision les commandes connues.
-    2. Passe libre : recupere le texte complet (utile pour 'recherche <sujet>').
-    """
     if modele_vosk is None:
         return []
 
@@ -390,7 +446,6 @@ def _transcrire_vosk(audio):
 
 
 def _transcrire_google(audio):
-    """Reconnaissance vocale en ligne via Google Speech Recognition."""
     resultat = reconnaissance.recognize_google(audio, language="fr-FR", show_all=True)
     if not resultat or not isinstance(resultat, dict):
         return []
@@ -402,20 +457,20 @@ def _transcrire_google(audio):
 
 
 def ecouter(source, timeout=8, phrase_time_limit=12):
-    """
-    Ecoute une phrase et utilise Google en ligne si active, avec bascule
-    automatique et signalee sur Vosk local en cas de perte de connexion.
-    """
     global mode_reconnaissance_en_ligne
 
     mode_affiche = "en ligne" if mode_reconnaissance_en_ligne else "local"
     print(f"\nJ'ecoute vos ordres, maitre... [mode {mode_affiche}]")
 
+    _bridge.state("listening")
     try:
         audio = reconnaissance.listen(source, timeout=timeout, phrase_time_limit=phrase_time_limit)
     except sr.WaitTimeoutError:
         print("Aucune commande detectee.")
+        _bridge.state("idle")
         return []
+
+    _bridge.state("processing")
 
     propositions = []
 
@@ -424,9 +479,9 @@ def ecouter(source, timeout=8, phrase_time_limit=12):
             propositions = _transcrire_google(audio)
         except sr.UnknownValueError:
             print("Je n'ai pas compris votre demande.")
+            _bridge.state("idle")
             return []
         except sr.RequestError:
-            # Perte de connexion : bascule automatique sur Vosk local
             if modele_vosk is not None:
                 mode_reconnaissance_en_ligne = False
                 parler(
@@ -437,6 +492,7 @@ def ecouter(source, timeout=8, phrase_time_limit=12):
                     propositions = _transcrire_vosk(audio)
                 except Exception as erreur_vosk:
                     print("Erreur Vosk :", erreur_vosk)
+                    _bridge.state("idle")
                     return []
             else:
                 parler("Désolée maître, ma connexion est coupée et mon module local est indisponible.")
@@ -446,10 +502,12 @@ def ecouter(source, timeout=8, phrase_time_limit=12):
             propositions = _transcrire_vosk(audio)
         except Exception as erreur_vosk:
             print("Erreur Vosk :", erreur_vosk)
+            _bridge.state("idle")
             return []
 
     if not propositions:
         print("Je n'ai pas compris votre demande.")
+        _bridge.state("idle")
         return []
 
     print('\nTu as dit : "' + propositions[0].lower() + '"')
@@ -457,10 +515,6 @@ def ecouter(source, timeout=8, phrase_time_limit=12):
 
 
 def choisir_commande(propositions):
-    """
-    Parcourt les transcriptions alternatives et retient la premiere qui
-    correspond a une commande connue. Sinon, retourne la meilleure transcription.
-    """
     for proposition in propositions:
         texte = normaliser(proposition)
         nom = identifier(texte)
@@ -472,10 +526,6 @@ def choisir_commande(propositions):
 
 
 def confirmer_action(source, question):
-    """
-    Demande une confirmation vocale explicite avant une action sensible.
-    Retourne True uniquement en cas de reponse affirmative claire.
-    """
     parler(question)
     propositions = ecouter(source, timeout=7, phrase_time_limit=6)
     for proposition in propositions:
@@ -526,7 +576,6 @@ def ouvrir_brave(url=URL_ACCUEIL_BRAVE):
 
 
 def ouvrir_chrome(url=None):
-    """Lance Google Chrome installe sur la machine, avec une URL optionnelle."""
     chemin = trouver_chrome()
     if chemin:
         if url:
@@ -538,20 +587,18 @@ def ouvrir_chrome(url=None):
 
 
 def ouvrir_url(url):
-    """Ouvre l'adresse dans Brave, ou dans le navigateur par defaut si Brave est introuvable."""
     if not ouvrir_brave(url):
         webbrowser.open(url)
 
 
 def ouvrir_spotify():
     try:
-        os.startfile("spotify:")  # application Spotify installee
+        os.startfile("spotify:")
     except OSError:
         ouvrir_url(URL_SPOTIFY_WEB)
 
 
 def ouvrir_claude_application():
-    """Lance l'application Claude installee sur l'ordinateur. Retourne False si introuvable."""
     chemins = [
         os.path.expandvars(r"%LOCALAPPDATA%\AnthropicClaude\claude.exe"),
         os.path.expandvars(r"%LOCALAPPDATA%\Programs\Claude\Claude.exe"),
@@ -584,6 +631,43 @@ def ouvrir_claude_application():
         return False
 
 
+def ouvrir_administration_vera():
+    """Demarre lancer_admin.bat si le port 3001 n'ecoute pas encore, sinon ouvre Brave."""
+    try:
+        with socket.create_connection(("127.0.0.1", 3001), timeout=0.6):
+            ouvrir_url(URL_ADMIN_VERA)
+            return True
+    except OSError:
+        pass
+
+    bat_admin = os.path.join(DOSSIER_PROJET, "lancer_admin.bat")
+    if not os.path.exists(bat_admin):
+        return False
+
+    info = subprocess.STARTUPINFO()
+    info.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+    info.wShowWindow = 7  # SW_SHOWMINNOACTIVE
+    subprocess.Popen(
+        ["cmd.exe", "/c", bat_admin],
+        cwd=DOSSIER_PROJET,
+        creationflags=subprocess.CREATE_NEW_CONSOLE,
+        startupinfo=info,
+    )
+    return True
+
+
+def ouvrir_ressources_systeme():
+    """Equivalent clavier Ctrl + Shift + Echap (Gestionnaire des taches / Ressources)."""
+    VK_CONTROL, VK_SHIFT, VK_ESCAPE = 0x11, 0x10, 0x1B
+    KEYEVENTF_KEYUP = 0x0002
+    user32.keybd_event(VK_CONTROL, 0, 0, 0)
+    user32.keybd_event(VK_SHIFT, 0, 0, 0)
+    user32.keybd_event(VK_ESCAPE, 0, 0, 0)
+    user32.keybd_event(VK_ESCAPE, 0, KEYEVENTF_KEYUP, 0)
+    user32.keybd_event(VK_SHIFT, 0, KEYEVENTF_KEYUP, 0)
+    user32.keybd_event(VK_CONTROL, 0, KEYEVENTF_KEYUP, 0)
+
+
 def terminer(processus, force=False):
     commande = ["taskkill", "/IM", processus, "/T"]
     if force:
@@ -591,20 +675,33 @@ def terminer(processus, force=False):
     subprocess.run(commande, capture_output=True, text=True)
 
 
+def _pids_projet_proteges():
+    pids = {os.getpid()}
+    chemin_runtime = os.path.join(DOSSIER_PROJET, "data", "runtime.json")
+    try:
+        with open(chemin_runtime, "r", encoding="utf-8") as f:
+            donnees = json.load(f)
+        for val in donnees.get("pids", {}).values():
+            if isinstance(val, int) and val > 0:
+                pids.add(val)
+    except Exception:
+        pass
+    return pids
+
+
 def lister_processus_ouverts():
-    """Retourne les noms (.exe) de toutes les applications visibles ouvertes, hors terminaux."""
-    pid_courant = os.getpid()
+    pids_proteges = _pids_projet_proteges()
     processus_trouves = set()
 
     def rappel(hwnd, param):
         if (
             user32.IsWindowVisible(hwnd)
             and user32.GetWindowTextLengthW(hwnd) > 0
-            and not user32.GetWindow(hwnd, 4)  # GW_OWNER : ignore les fenetres secondaires
+            and not user32.GetWindow(hwnd, 4)
         ):
             pid = wintypes.DWORD()
             user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
-            if pid.value != pid_courant:
+            if pid.value not in pids_proteges:
                 exe = nom_processus(hwnd)
                 if exe and exe not in PROCESSUS_PROTEGES:
                     processus_trouves.add(exe)
@@ -616,18 +713,15 @@ def lister_processus_ouverts():
 
 
 def fermer_tout():
-    """Ferme toutes les applications ouvertes sur le bureau sauf les terminaux."""
     cibles = lister_processus_ouverts()
     if not cibles:
         return
 
-    # 1. Fermeture douce d'abord pour toutes les applications
     for processus in cibles:
         terminer(processus, force=False)
 
     time.sleep(1.5)
 
-    # 2. Fermeture forcee pour tout ce qui reste ouvert (sauf processus doux comme VS Code)
     restants = lister_processus_ouverts()
     for processus in restants:
         if processus not in PROCESSUS_DOUX:
@@ -635,12 +729,10 @@ def fermer_tout():
 
 
 def eteindre_ordinateur():
-    """Arrete completement l'ordinateur Windows."""
     subprocess.run(["shutdown", "/s", "/t", "3"], capture_output=True, text=True)
 
 
 def masquer_tout():
-    """Equivalent de Windows + D : affiche le bureau (ou restaure les fenetres)."""
     VK_LWIN, VK_D, KEYEVENTF_KEYUP = 0x5B, 0x44, 0x0002
     user32.keybd_event(VK_LWIN, 0, 0, 0)
     user32.keybd_event(VK_D, 0, 0, 0)
@@ -655,7 +747,7 @@ def masquer_tout():
 def nom_processus(hwnd):
     pid = wintypes.DWORD()
     user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
-    poignee = kernel32.OpenProcess(0x1000, False, pid.value)  # PROCESS_QUERY_LIMITED_INFORMATION
+    poignee = kernel32.OpenProcess(0x1000, False, pid.value)
     if not poignee:
         return ""
     try:
@@ -669,14 +761,13 @@ def nom_processus(hwnd):
 
 
 def lister_fenetres(exe):
-    """Liste les fenetres principales visibles appartenant au programme donne."""
     trouvees = []
 
     def rappel(hwnd, param):
         if (
             user32.IsWindowVisible(hwnd)
             and user32.GetWindowTextLengthW(hwnd) > 0
-            and not user32.GetWindow(hwnd, 4)  # GW_OWNER : ignore les fenetres secondaires
+            and not user32.GetWindow(hwnd, 4)
             and nom_processus(hwnd) == exe
         ):
             trouvees.append(hwnd)
@@ -688,12 +779,11 @@ def lister_fenetres(exe):
 
 
 def attendre_nouvelle_fenetre(exe, avant, delai=20):
-    """Attend l'apparition d'une nouvelle fenetre du programme et la retourne."""
     fin = time.time() + delai
     while time.time() < fin:
         nouvelles = [h for h in lister_fenetres(exe) if h not in avant]
         if nouvelles:
-            time.sleep(0.8)  # laisse la fenetre finir de s'afficher
+            time.sleep(0.8)
             return nouvelles[0]
         time.sleep(0.4)
     existantes = lister_fenetres(exe)
@@ -701,14 +791,12 @@ def attendre_nouvelle_fenetre(exe, avant, delai=20):
 
 
 def ouvrir_fenetre(chemin, exe, url):
-    """Ouvre l'adresse dans une nouvelle fenetre et retourne sa poignee."""
     avant = set(lister_fenetres(exe))
     subprocess.Popen([chemin, "--new-window", url])
     return attendre_nouvelle_fenetre(exe, avant)
 
 
 def lister_ecrans():
-    """Retourne les zones utiles des ecrans (gauche, haut, droite, bas), tries de gauche a droite."""
     ecrans = []
 
     def rappel(moniteur, hdc, rect, param):
@@ -726,10 +814,6 @@ def lister_ecrans():
 
 
 def placer_fenetres(fenetre_gauche, fenetre_droite):
-    """
-    Deux ecrans ou plus : une fenetre maximisee par ecran.
-    Un seul ecran : les deux fenetres cote a cote, moitie gauche et moitie droite.
-    """
     ecrans = lister_ecrans()
     if not ecrans:
         return
@@ -746,10 +830,10 @@ def placer_fenetres(fenetre_gauche, fenetre_droite):
     for hwnd, (g, h, d, b) in cibles:
         if not hwnd:
             continue
-        user32.ShowWindow(hwnd, 9)  # SW_RESTORE
+        user32.ShowWindow(hwnd, 9)
         user32.MoveWindow(hwnd, g, h, d - g, b - h, True)
         if maximiser:
-            user32.ShowWindow(hwnd, 3)  # SW_MAXIMIZE
+            user32.ShowWindow(hwnd, 3)
 
 
 # ==========================================
@@ -757,10 +841,9 @@ def placer_fenetres(fenetre_gauche, fenetre_droite):
 # ==========================================
 
 def lancer_fichier_bat():
-    """Execute le fichier .bat dans sa propre console, reduite dans la barre des taches."""
     info = subprocess.STARTUPINFO()
     info.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-    info.wShowWindow = 7  # SW_SHOWMINNOACTIVE
+    info.wShowWindow = 7
     subprocess.Popen(
         ["cmd.exe", "/c", FICHIER_CANDIDATURE],
         cwd=os.path.dirname(FICHIER_CANDIDATURE),
@@ -770,7 +853,6 @@ def lancer_fichier_bat():
 
 
 def attendre_serveur(hote, port, delai):
-    """Attend que le serveur local reponde. Retourne False si le delai est depasse."""
     fin = time.time() + delai
     while time.time() < fin:
         try:
@@ -784,6 +866,7 @@ def attendre_serveur(hote, port, delai):
 def lancer_candidature():
     if not os.path.exists(FICHIER_CANDIDATURE):
         parler("Je ne trouve pas le fichier de lancement, maître.")
+        _bridge.state("error")
         return
 
     chemin_brave = trouver_brave()
@@ -791,9 +874,11 @@ def lancer_candidature():
 
     if not chemin_brave:
         parler("Je ne parviens pas à localiser Brave, maître.")
+        _bridge.state("error")
         return
     if not chemin_chrome:
         parler("Je ne parviens pas à localiser Chrome, maître.")
+        _bridge.state("error")
         return
 
     parler("Je lance votre espace de candidature, maître.")
@@ -813,7 +898,6 @@ def lancer_candidature():
 # ==========================================
 
 def executer(nom, texte, source):
-    """Retourne False pour arreter l'assistante, True sinon."""
     global mode_reconnaissance_en_ligne
 
     if nom == "mode_local":
@@ -854,6 +938,16 @@ def executer(nom, texte, source):
         parler("Comme vous voudrez, maître. Je vous souhaite une excellente journée.")
         return False
 
+    elif nom == "admin":
+        parler("J'ouvre votre espace d'administration dans Brave, maître.")
+        if not ouvrir_administration_vera():
+            parler("Je ne trouve pas le lanceur de l'administration, maître.")
+            _bridge.state("error")
+
+    elif nom == "ressources":
+        parler("J'affiche le gestionnaire des ressources système, maître.")
+        ouvrir_ressources_systeme()
+
     elif nom == "etat":
         parler(
             "Je me porte à merveille, maître, surtout maintenant que vous êtes là. "
@@ -892,6 +986,7 @@ def executer(nom, texte, source):
         parler("J'ouvre Moodle sur Chrome, maître.")
         if not ouvrir_chrome(URL_MOODLE):
             parler("Je ne trouve pas Chrome sur votre machine, maître. J'ouvre Moodle dans votre navigateur par défaut.")
+            _bridge.state("error")
             webbrowser.open(URL_MOODLE)
 
     elif nom == "claude":
@@ -916,11 +1011,13 @@ def executer(nom, texte, source):
         parler("J'ouvre Google Chrome, maître.")
         if not ouvrir_chrome():
             parler("Je suis désolée maître, je ne parviens pas à localiser Chrome sur votre ordinateur.")
+            _bridge.state("error")
 
     elif nom == "navigateur":
         parler("Avec plaisir maître. Je vous ouvre votre navigateur préféré.")
         if not ouvrir_brave():
             parler("Je suis désolée maître, je ne parviens pas à localiser Brave.")
+            _bridge.state("error")
 
     elif nom == "google":
         parler("Je vous ouvre Google, maître.")
@@ -940,6 +1037,7 @@ def executer(nom, texte, source):
 
     else:
         parler("Je suis désolée maître, je ne connais pas encore cette commande.")
+        _bridge.state("error")
 
     return True
 
@@ -973,11 +1071,13 @@ def main():
         print("Reconnaissance vocale: Indisponible (ni Internet ni Vosk)")
 
     try:
-        with sr.Microphone() as source:
+        with sr.Microphone(sample_rate=16000, chunk_size=512) as source:
             print("\nCalibration du microphone...")
             reconnaissance.adjust_for_ambient_noise(source, duration=1.5)
             print("Microphone opérationnel.")
 
+            _bridge.start()
+            _bridge.assistant_started()
             parler(
                 "Bonjour mon cher et tendre maître Nobel. "
                 "Je suis Véra, votre assistante personnelle. "
@@ -1004,7 +1104,6 @@ def main():
 
                 if not propositions:
                     echecs += 1
-                    # Apres plusieurs silences ou echecs, on recalibre le bruit ambiant.
                     if echecs >= 3:
                         reconnaissance.adjust_for_ambient_noise(source, duration=0.7)
                         echecs = 0
@@ -1017,6 +1116,9 @@ def main():
         print("Erreur microphone :", erreur)
         input("Appuyez sur Entrée pour quitter...")
         return
+    finally:
+        _bridge.assistant_stopped()
+        _bridge.stop()
 
     print(f"\n{NOM_ASSISTANTE} : Assistante arrêtée.")
 

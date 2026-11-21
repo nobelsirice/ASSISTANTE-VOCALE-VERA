@@ -1,0 +1,43 @@
+﻿# Python
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Environnements virtuels
+venv/
+.venv/
+env/
+
+# Secrets et configurations privées
+.env
+.env.*
+!.env.example
+secrets/
+*.pem
+*.key
+
+# Logs et fichiers temporaires
+*.log
+logs/
+temp/
+tmp/
+
+# IDE
+.vscode/
+.idea/
+
+# Système
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Environnement local
+venv/
+sauvegardes/
+demarrage_nobel - Raccourci.lnk
+
+# Modèles téléchargés (à vérifier avant publication)
+
+# Modèles vocaux téléchargés
+modele_vosk/
+voix/*.onnx

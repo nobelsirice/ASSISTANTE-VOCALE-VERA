@@ -5,6 +5,7 @@ import re
 import shutil
 import socket
 import subprocess
+import sys
 import threading
 import time
 import unicodedata
@@ -50,6 +51,9 @@ except Exception:
 
 NOM_ASSISTANTE = "VÉRA"
 
+CODE_REDEMARRAGE = 42
+redemarrage_demande = False
+
 DOSSIER_PROJET = os.path.dirname(os.path.abspath(__file__))
 FICHIER_VOIX_ONNX = os.path.join(DOSSIER_PROJET, "voix", "fortune-fr-multi.onnx")
 FICHIER_VOIX_JSON = os.path.join(DOSSIER_PROJET, "voix", "model.onnx.json")
@@ -70,6 +74,9 @@ FICHIER_CANDIDATURE = r"C:\Users\nobel\OneDrive\Documents\ELEMENTS\Nob-Candit\la
 URL_CANDIDATURE_BRAVE = "http://localhost:3000"
 URL_CANDIDATURE_CHROME = "https://app.cvlab.jobs/jobs?time_range=24h&sort=match"
 DELAI_SERVEUR = 60  # secondes d'attente maximale avant d'ouvrir localhost:3000
+
+# Dossier contenant le CV
+DOSSIER_CV = r"C:\Users\nobel\OneDrive\Documents\ELEMENTS\cv\bon cv"
 
 # Processus a ne jamais fermer lors de "ferme tout" (terminaux et systeme)
 PROCESSUS_PROTEGES = {
@@ -94,11 +101,13 @@ PROCESSUS_DOUX = {"code.exe"}
 # Commandes reconnues : (nom, [mots ou expressions declencheurs]).
 # L'ordre compte : la premiere correspondance l'emporte.
 COMMANDES = [
+    ("mode_automatique", ["mode automatique", "passe en automatique", "passer en automatique", "active le mode automatique"]),
     ("mode_local", ["mode local", "passe en local", "passer en local", "hors ligne", "local"]),
     ("mode_en_ligne", ["mode en ligne", "passe en ligne", "passer en ligne", "en ligne", "connecte"]),
     ("fermer_tout", ["ferme tout", "fermer tout", "ferme tous", "tout fermer", "ferme"]),
     ("eteindre", ["eteins", "eteint", "eteindre", "eteins l ordinateur", "eteindre l ordinateur", "arrete l ordinateur"]),
     ("masquer_tout", ["masque tout", "masquer tout", "masque tous", "affiche le bureau", "masque", "bureau"]),
+    ("redemarrer", ["redemarre toi", "redemarrer toi", "redemarre vera", "redemarrer vera", "redemarre", "redemarrer"]),
     ("arret", ["arrete toi", "arrete", "au revoir", "stop", "bye bye"]),
     ("admin", ["admin", "administrateur", "administration", "panneau d administration"]),
     ("ressources", ["ressources", "ressource", "gestionnaire des taches", "moniteur de ressources"]),
@@ -108,6 +117,7 @@ COMMANDES = [
     ]),
     ("bonjour", ["bonjour", "salut", "coucou"]),
     ("heure", ["heure", "quelle heure"]),
+    ("cv", ["cv", "c v", "curriculum vitae"]),
     ("candidature", ["candidature", "candidatures", "can", "candid", "cand"]),
     ("recherche", ["recherche", "cherche"]),
     ("moodle", ["moodle", "moodel", "moudule", "mon espace", "cours"]),
@@ -167,7 +177,7 @@ def _construire_grammaire_vosk(modele):
 
 
 # ==========================================
-# INITIALISATION
+# INITIALISATION (OPTIMISEE MEMOIRE)
 # ==========================================
 
 reconnaissance = sr.Recognizer()
@@ -183,7 +193,10 @@ verrou_voix = threading.Lock()
 moteur_piper = None
 modele_vosk = None
 GRAMMAIRE_VOSK_JSON = None
+_vosk_deja_tente = False
 mode_reconnaissance_en_ligne = True
+mode_local_force_manuel = False
+derniere_verification_internet = 0.0
 
 if PIPER_DISPONIBLE and os.path.exists(FICHIER_VOIX_ONNX) and os.path.exists(FICHIER_VOIX_JSON):
     try:
@@ -192,14 +205,29 @@ if PIPER_DISPONIBLE and os.path.exists(FICHIER_VOIX_ONNX) and os.path.exists(FIC
         print("Avertissement : impossible de charger Piper, passage sur pyttsx3 :", erreur_init_piper)
         moteur_piper = None
 
-if VOSK_DISPONIBLE and os.path.exists(DOSSIER_MODELE_VOSK):
+
+def _vosk_disponible_sur_disque():
+    return VOSK_DISPONIBLE and os.path.exists(DOSSIER_MODELE_VOSK)
+
+
+def _obtenir_modele_vosk():
+    """Charge Vosk uniquement a la premiere bascule hors ligne (economise ~130 Mo de RAM)."""
+    global modele_vosk, GRAMMAIRE_VOSK_JSON, _vosk_deja_tente
+    if modele_vosk is not None:
+        return modele_vosk
+    if _vosk_deja_tente or not _vosk_disponible_sur_disque():
+        return None
+    _vosk_deja_tente = True
     try:
         VoskSetLogLevel(-1)
         modele_vosk = VoskModel(DOSSIER_MODELE_VOSK)
         GRAMMAIRE_VOSK_JSON = _construire_grammaire_vosk(modele_vosk)
+        return modele_vosk
     except Exception as erreur_init_vosk:
         print("Avertissement : impossible de charger Vosk :", erreur_init_vosk)
         modele_vosk = None
+        return None
+
 
 user32 = ctypes.windll.user32
 kernel32 = ctypes.windll.kernel32
@@ -259,6 +287,28 @@ def internet_disponible(timeout=2.0):
         except OSError:
             continue
     return False
+
+
+def actualiser_mode_reconnaissance(force=False):
+    """Bascule automatiquement selon la connexion, sauf si le mode local est forcé."""
+    global mode_reconnaissance_en_ligne, derniere_verification_internet
+
+    maintenant = time.monotonic()
+    if mode_local_force_manuel:
+        return
+    if not force and maintenant - derniere_verification_internet < 10.0:
+        return
+
+    derniere_verification_internet = maintenant
+    connexion_active = internet_disponible(timeout=0.8)
+
+    if connexion_active and not mode_reconnaissance_en_ligne:
+        mode_reconnaissance_en_ligne = True
+        parler("La connexion Internet est revenue. Je repasse en reconnaissance vocale en ligne , maître.")
+    elif not connexion_active and mode_reconnaissance_en_ligne:
+        if _vosk_disponible_sur_disque() and _obtenir_modele_vosk() is not None:
+            mode_reconnaissance_en_ligne = False
+            parler("La connexion Internet est perdue. Je passe en reconnaissance vocale locale , maître.")
 
 
 def normaliser(texte):
@@ -340,7 +390,7 @@ def _parler_secours_sapi5(texte):
 
 
 def parler(texte):
-    print(f"\n{NOM_ASSISTANTE} :", texte)
+    print(f"\n{NOM_ASSISTANTE} ❤️ :", texte)
 
     with verrou_voix:
         if moteur_piper is not None:
@@ -403,12 +453,13 @@ def parler(texte):
 # ==========================================
 
 def _transcrire_vosk(audio):
-    if modele_vosk is None:
+    mod = _obtenir_modele_vosk()
+    if mod is None:
         return []
 
     donnees_pcm = audio.get_raw_data(convert_rate=16000, convert_width=2)
 
-    rec_cible = KaldiRecognizer(modele_vosk, 16000, GRAMMAIRE_VOSK_JSON)
+    rec_cible = KaldiRecognizer(mod, 16000, GRAMMAIRE_VOSK_JSON)
     rec_cible.SetMaxAlternatives(3)
     rec_cible.AcceptWaveform(donnees_pcm)
     res_cible = json.loads(rec_cible.FinalResult())
@@ -428,7 +479,7 @@ def _transcrire_vosk(audio):
     if propositions_ciblees and not est_recherche:
         return propositions_ciblees
 
-    rec_libre = KaldiRecognizer(modele_vosk, 16000)
+    rec_libre = KaldiRecognizer(mod, 16000)
     rec_libre.SetMaxAlternatives(3)
     rec_libre.AcceptWaveform(donnees_pcm)
     res_libre = json.loads(rec_libre.FinalResult())
@@ -457,7 +508,9 @@ def _transcrire_google(audio):
 
 
 def ecouter(source, timeout=8, phrase_time_limit=12):
-    global mode_reconnaissance_en_ligne
+    global mode_reconnaissance_en_ligne, derniere_verification_internet
+
+    actualiser_mode_reconnaissance()
 
     mode_affiche = "en ligne" if mode_reconnaissance_en_ligne else "local"
     print(f"\nJ'ecoute vos ordres, maitre... [mode {mode_affiche}]")
@@ -482,8 +535,9 @@ def ecouter(source, timeout=8, phrase_time_limit=12):
             _bridge.state("idle")
             return []
         except sr.RequestError:
-            if modele_vosk is not None:
+            if _vosk_disponible_sur_disque() and _obtenir_modele_vosk() is not None:
                 mode_reconnaissance_en_ligne = False
+                derniere_verification_internet = time.monotonic()
                 parler(
                     "Maître, j'ai perdu ma connexion Internet. "
                     "Je bascule immédiatement sur ma reconnaissance vocale locale."
@@ -898,24 +952,39 @@ def lancer_candidature():
 # ==========================================
 
 def executer(nom, texte, source):
-    global mode_reconnaissance_en_ligne
+    global mode_reconnaissance_en_ligne, mode_local_force_manuel
+    global derniere_verification_internet, redemarrage_demande
 
-    if nom == "mode_local":
-        if modele_vosk is None:
+    if nom == "mode_automatique":
+        mode_local_force_manuel = False
+        derniere_verification_internet = 0.0
+        actualiser_mode_reconnaissance(force=True)
+        parler("Je reprends la gestion automatique du mode vocal, maître.")
+
+    elif nom == "mode_local":
+        if not _vosk_disponible_sur_disque():
             parler("Désolée maître, mon module de reconnaissance locale n'est pas disponible.")
+        elif _obtenir_modele_vosk() is None:
+            parler("Désolée maître, je n'arrive pas à charger la reconnaissance locale.")
         elif not mode_reconnaissance_en_ligne:
+            mode_local_force_manuel = True
             parler("Je suis déjà en mode de reconnaissance locale, maître.")
         else:
+            mode_local_force_manuel = True
             mode_reconnaissance_en_ligne = False
             parler("Entendu maître. Je passe en mode de reconnaissance vocale locale, entièrement hors ligne.")
 
     elif nom == "mode_en_ligne":
+        mode_local_force_manuel = False
         if mode_reconnaissance_en_ligne:
+            derniere_verification_internet = 0.0
             parler("Je suis déjà connectée au service de reconnaissance en ligne, maître.")
         elif internet_disponible():
             mode_reconnaissance_en_ligne = True
+            derniere_verification_internet = time.monotonic()
             parler("Parfait maître. Je repasse sur le service de reconnaissance en ligne pour une précision maximale.")
         else:
+            derniere_verification_internet = 0.0
             parler("Désolée maître, aucune connexion Internet n'est détectée. Je reste en mode local.")
 
     elif nom == "fermer_tout":
@@ -936,6 +1005,11 @@ def executer(nom, texte, source):
 
     elif nom == "arret":
         parler("Comme vous voudrez, maître. Je vous souhaite une excellente journée.")
+        return False
+
+    elif nom == "redemarrer":
+        parler("Je redémarre Véra. Je reviens tout de suite, maître.")
+        redemarrage_demande = True
         return False
 
     elif nom == "admin":
@@ -973,6 +1047,18 @@ def executer(nom, texte, source):
 
     elif nom == "candidature":
         lancer_candidature()
+
+    elif nom == "cv":
+        if os.path.isdir(DOSSIER_CV):
+            try:
+                os.startfile(DOSSIER_CV)
+                parler("Bien sûr, maître. J'ouvre le dossier de votre CV.")
+            except OSError:
+                parler("Je n'ai pas réussi à ouvrir le dossier de votre CV, maître.")
+                _bridge.state("error")
+        else:
+            parler("Je ne trouve pas le dossier de votre CV, maître.")
+            _bridge.state("error")
 
     elif nom == "recherche":
         recherche = re.sub(r"^.*?\b(recherche|cherche)\b", "", texte, count=1).strip()
@@ -1047,7 +1133,8 @@ def executer(nom, texte, source):
 # ==========================================
 
 def main():
-    global mode_reconnaissance_en_ligne
+    global mode_reconnaissance_en_ligne, mode_local_force_manuel
+    global derniere_verification_internet
 
     print("\n===================================")
     print(f"              {NOM_ASSISTANTE}")
@@ -1060,12 +1147,15 @@ def main():
         print("Synthèse vocale      : Secours Windows SAPI5")
 
     connexion_active = internet_disponible()
+    derniere_verification_internet = time.monotonic()
+    mode_local_force_manuel = False
     if connexion_active:
         mode_reconnaissance_en_ligne = True
-        print("Reconnaissance vocale: Google en ligne (secours Vosk local prêt)")
-    elif modele_vosk is not None:
+        print("Reconnaissance vocale: Google en ligne (secours Vosk local pret a la demande)")
+    elif _vosk_disponible_sur_disque():
         mode_reconnaissance_en_ligne = False
-        print("Reconnaissance vocale: Vosk local hors ligne (aucun Internet détecté)")
+        _obtenir_modele_vosk()
+        print("Reconnaissance vocale: Vosk local hors ligne (aucun Internet detecte)")
     else:
         mode_reconnaissance_en_ligne = True
         print("Reconnaissance vocale: Indisponible (ni Internet ni Vosk)")
@@ -1125,3 +1215,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+    sys.exit(CODE_REDEMARRAGE if redemarrage_demande else 0)

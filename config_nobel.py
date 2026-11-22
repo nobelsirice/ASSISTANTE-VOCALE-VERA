@@ -43,6 +43,7 @@ CONFIG_DEFAUT = {
         "visible": True,
         "reduit": False,
         "mode_gif_seul": False,
+        "mode_fil_neon": False,
         "taille_reduite": 96,
         "marges_internes": 16,
     },
@@ -55,7 +56,7 @@ CONFIG_DEFAUT = {
         "epaisseur_contour": 2,
         "couleur_neon": "#00E5FF",
         "couleur_neon_secondaire": "#8A5CFF",
-        "intensite_neon": 0.8,
+        "intensite_neon": 0.85,
         "rayon_angles": 18,
         "halo": {
             "actif": True,
@@ -229,6 +230,7 @@ def valider_config(brut):
         d["visible"] = _valider_bool(fen.get("visible"), d["visible"])
         d["reduit"] = _valider_bool(fen.get("reduit"), d["reduit"])
         d["mode_gif_seul"] = _valider_bool(fen.get("mode_gif_seul"), d["mode_gif_seul"])
+        d["mode_fil_neon"] = _valider_bool(fen.get("mode_fil_neon"), d["mode_fil_neon"])
         d["taille_reduite"] = _valider_int(fen.get("taille_reduite"), d["taille_reduite"], 48, 240)
         d["marges_internes"] = _valider_int(fen.get("marges_internes"), d["marges_internes"], 0, 64)
 

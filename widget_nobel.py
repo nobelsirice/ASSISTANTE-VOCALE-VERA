@@ -21,6 +21,7 @@ from PySide6.QtCore import (
 from PySide6.QtGui import (
     QAction,
     QColor,
+    QConicalGradient,
     QFont,
     QFontMetrics,
     QIcon,
@@ -102,10 +103,19 @@ def tronquer_proprement(texte, limite):
     return extrait + " …"
 
 
-def creer_silhouette_neon(pixmap, couleur_hex, epaisseur=4):
-    """Genere une aura neon epousant exactement le canal alpha de l'image."""
+_CACHE_SILHOUETTE = {}
+
+
+def creer_silhouette_neon(pixmap, couleur_hex):
+    """Genere et met en cache une silhouette teintee epousant exactement le canal alpha."""
     if pixmap is None or pixmap.isNull():
         return None
+    cle = (pixmap.cacheKey(), couleur_hex)
+    if cle in _CACHE_SILHOUETTE:
+        return _CACHE_SILHOUETTE[cle]
+    if len(_CACHE_SILHOUETTE) > 96:
+        _CACHE_SILHOUETTE.clear()
+
     img = pixmap.toImage().convertToFormat(QImage.Format_ARGB32)
     teinte = QImage(img.size(), QImage.Format_ARGB32)
     c = QColor(couleur_hex)
@@ -116,7 +126,9 @@ def creer_silhouette_neon(pixmap, couleur_hex, epaisseur=4):
     p.setCompositionMode(QPainter.CompositionMode_DestinationIn)
     p.drawImage(0, 0, img)
     p.end()
-    return QPixmap.fromImage(teinte)
+    res = QPixmap.fromImage(teinte)
+    _CACHE_SILHOUETTE[cle] = res
+    return res
 
 
 class BulleConversation(QWidget):
@@ -385,6 +397,10 @@ class WidgetVera(QWidget):
         act_gif.triggered.connect(self._basculer_mode_gif)
         menu.addAction(act_gif)
 
+        act_fil = QAction("Activer / Désactiver le fil néon", self)
+        act_fil.triggered.connect(self._basculer_fil_neon)
+        menu.addAction(act_fil)
+
         act_admin = QAction("Ouvrir l'administration", self)
         act_admin.triggered.connect(self._ouvrir_administration)
         menu.addAction(act_admin)
@@ -428,7 +444,15 @@ class WidgetVera(QWidget):
         if actif:
             self.cfg["fenetre"]["reduit"] = False
         self._appliquer_geometrie_initiale(conserver_ancrage=True)
+        self._ajustement_cadence_animation()
         self._envoyer_geometrie()
+
+    def _basculer_fil_neon(self):
+        actif = not self.cfg["fenetre"].get("mode_fil_neon", False)
+        self.cfg["fenetre"]["mode_fil_neon"] = actif
+        self._ajustement_cadence_animation()
+        self._envoyer_geometrie()
+        self.update()
 
     def _ouvrir_administration(self):
         bat_admin = os.path.join(DOSSIER_PROJET, "lancer_admin.bat")
@@ -457,6 +481,7 @@ class WidgetVera(QWidget):
         return None
 
     def _recharger_ressources(self):
+        _CACHE_SILHOUETTE.clear()
         app_cfg = self.cfg.get("apparence", {})
         self._pixmap_fond = self._charger_pixmap(app_cfg.get("image_fond"))
 
@@ -605,7 +630,6 @@ class WidgetVera(QWidget):
         self.bulle.definir_position_queue(centre_perso_x - bx)
 
     def mettre_a_jour_masque_clics(self):
-        """Les zones transparentes autour de la carte et de la bulle laissent passer les clics."""
         rect_c = self._rect_carte()
         region = QRegion(rect_c)
         if self.bulle.isVisible():
@@ -747,10 +771,11 @@ class WidgetVera(QWidget):
 
     def _ajustement_cadence_animation(self):
         anim = self.cfg.get("apparence", {}).get("animations", {})
+        fil_neon = bool(self.cfg["fenetre"].get("mode_fil_neon", False))
         if not self.isVisible() or not anim.get("actives", True):
             self._timer_anim.stop()
             return
-        if self.etat in ("listening", "processing", "speaking", "error"):
+        if fil_neon or self.etat in ("listening", "processing", "speaking", "error"):
             self._timer_anim.setInterval(33)
             if not self._timer_anim.isActive():
                 self._timer_anim.start()
@@ -876,27 +901,117 @@ class WidgetVera(QWidget):
             QRectF(cx - r * 0.36, cy - r * 0.35, r * 0.72, r * 0.18), 6, 6
         )
 
-    def _dessiner_silhouette_neon_et_personnage(self, painter, scaled, px, py, couleur_neon_hex, intensite, pulse):
-        """Dessine un contour lumineux epousant la silhouette du personnage puis le personnage."""
-        aura = creer_silhouette_neon(scaled, couleur_neon_hex)
-        if aura is not None:
-            rayon = max(2, int(3 + 3 * pulse))
-            decalages = [
-                (-rayon, 0),
-                (rayon, 0),
-                (0, -rayon),
-                (0, rayon),
-                (-rayon, -rayon),
-                (rayon, -rayon),
-                (-rayon, rayon),
-                (rayon, rayon),
+    def _dessiner_silhouette_neon_et_personnage(
+        self, painter, scaled, px, py, c1_hex, c2_hex, intensite, pulse, fil_neon
+    ):
+        """
+        Dessine un contour laser multicouche (aura externe bleu/violet + liseret blanc incandescent)
+        epousant exactement la silhouette du personnage, plus un serpent de neon optionnel.
+        """
+        aura_ext = creer_silhouette_neon(scaled, c2_hex if fil_neon else c1_hex)
+        aura_int = creer_silhouette_neon(scaled, c1_hex)
+        coeur_blanc = creer_silhouette_neon(scaled, "#FFFFFF")
+
+        # 1. Aura externe diffuse (degrade secondaire / principal)
+        if aura_ext is not None:
+            r_ext = max(3, int(5 + 3 * pulse))
+            offsets_ext = [
+                (-r_ext, 0), (r_ext, 0), (0, -r_ext), (0, r_ext),
+                (-r_ext, -r_ext), (r_ext, -r_ext), (-r_ext, r_ext), (r_ext, r_ext),
             ]
             painter.save()
-            painter.setOpacity(min(1.0, 0.22 + 0.25 * intensite * (0.7 + 0.3 * pulse)))
-            for ox, oy in decalages:
-                painter.drawPixmap(px + ox, py + oy, aura)
+            painter.setOpacity(min(1.0, 0.18 + 0.22 * intensite))
+            for ox, oy in offsets_ext:
+                painter.drawPixmap(px + ox, py + oy, aura_ext)
             painter.restore()
+
+        # 2. Ligne neon principale vive
+        if aura_int is not None:
+            r_int = 2
+            offsets_int = [(-r_int, 0), (r_int, 0), (0, -r_int), (0, r_int)]
+            painter.save()
+            painter.setOpacity(min(1.0, 0.42 + 0.35 * intensite))
+            for ox, oy in offsets_int:
+                painter.drawPixmap(px + ox, py + oy, aura_int)
+            painter.restore()
+
+        # 3. Coeur blanc incandescent de 1 px (style tube neon haute luminosite)
+        if coeur_blanc is not None:
+            offsets_coeur = [(-1, 0), (1, 0), (0, -1), (0, 1)]
+            painter.save()
+            painter.setOpacity(min(1.0, 0.55 + 0.35 * pulse))
+            for ox, oy in offsets_coeur:
+                painter.drawPixmap(px + ox, py + oy, coeur_blanc)
+            painter.restore()
+
+        # 4. Option "Fil neon" : serpent lumineux en orbite autour de la silhouette
+        if fil_neon:
+            centre = QPointF(px + scaled.width() / 2.0, py + scaled.height() / 2.0)
+            rx = scaled.width() * 0.48
+            ry = scaled.height() * 0.48
+            self._dessiner_serpent_ellipse(painter, centre, rx, ry, c1_hex, c2_hex)
+
+        # 5. Personnage par-dessus
         painter.drawPixmap(px, py, scaled)
+
+    def _dessiner_serpent_ellipse(self, painter, centre, rx, ry, c1_hex, c2_hex):
+        angle_deg = math.degrees(self.phase)
+        grad = QConicalGradient(centre, -angle_deg)
+        c1 = QColor(c1_hex)
+        c2 = QColor(c2_hex)
+        grad.setColorAt(0.00, QColor("#FFFFFF"))
+        grad.setColorAt(0.08, c1)
+        grad.setColorAt(0.28, c2)
+        grad.setColorAt(0.45, QColor(c2.red(), c2.green(), c2.blue(), 0))
+        grad.setColorAt(1.00, QColor(c2.red(), c2.green(), c2.blue(), 0))
+
+        rect_orb = QRectF(centre.x() - rx, centre.y() - ry, rx * 2, ry * 2)
+        painter.save()
+        # Halo du serpent
+        pen_halo = QPen(grad, 7.0)
+        pen_halo.setCapStyle(Qt.RoundCap)
+        painter.setOpacity(0.45)
+        painter.setPen(pen_halo)
+        painter.drawEllipse(rect_orb)
+        # Fil vif
+        pen_fil = QPen(grad, 2.5)
+        pen_fil.setCapStyle(Qt.RoundCap)
+        painter.setOpacity(1.0)
+        painter.setPen(pen_fil)
+        painter.drawEllipse(rect_orb)
+        painter.restore()
+
+    def _dessiner_serpent_carte(self, painter, chemin_carte, rc, c1_hex, c2_hex):
+        """Serpent lumineux bleu/violet avec tete blanche qui glisse sur le contour du widget."""
+        angle_deg = math.degrees(self.phase)
+        grad = QConicalGradient(rc.center(), -angle_deg)
+        c1 = QColor(c1_hex)
+        c2 = QColor(c2_hex)
+        grad.setColorAt(0.00, QColor("#FFFFFF"))
+        grad.setColorAt(0.07, c1)
+        grad.setColorAt(0.24, c2)
+        grad.setColorAt(0.42, QColor(c2.red(), c2.green(), c2.blue(), 0))
+        grad.setColorAt(0.50, QColor("#FFFFFF"))
+        grad.setColorAt(0.57, c1)
+        grad.setColorAt(0.74, c2)
+        grad.setColorAt(0.92, QColor(c2.red(), c2.green(), c2.blue(), 0))
+        grad.setColorAt(1.00, QColor("#FFFFFF"))
+
+        painter.save()
+        # Halo large
+        pen_glow = QPen(grad, 8.0)
+        pen_glow.setCapStyle(Qt.RoundCap)
+        painter.setOpacity(0.42)
+        painter.setPen(pen_glow)
+        painter.drawPath(chemin_carte)
+
+        # Tube neon fin haute luminosite
+        pen_tube = QPen(grad, 2.6)
+        pen_tube.setCapStyle(Qt.RoundCap)
+        painter.setOpacity(1.0)
+        painter.setPen(pen_tube)
+        painter.drawPath(chemin_carte)
+        painter.restore()
 
     def paintEvent(self, event):
         painter = QPainter(self)
@@ -906,8 +1021,9 @@ class WidgetVera(QWidget):
         app = self.cfg["apparence"]
         fen = self.cfg["fenetre"]
         perso_cfg = self.cfg["personnage"]
-        rc = QRectF(self._rect_carte()).adjusted(2, 2, -2, -2)
+        rc = QRectF(self._rect_carte()).adjusted(3, 3, -3, -3)
         mode_gif_seul = bool(fen.get("mode_gif_seul", False))
+        mode_fil_neon = bool(fen.get("mode_fil_neon", False))
 
         pulse = 0.5 + 0.5 * math.sin(self.phase)
 
@@ -929,9 +1045,8 @@ class WidgetVera(QWidget):
             dx = perso_cfg.get("decalage_x", 0)
             dy = perso_cfg.get("decalage_y", 0)
             h_cible = max(48, int(rc.height() * echelle))
-            couleur_contour_sil = (
-                couleur_etat.name() if self.etat != "idle" else app["couleur_neon"]
-            )
+            c1_hex = couleur_etat.name() if self.etat != "idle" else app["couleur_neon"]
+            c2_hex = app["couleur_neon_secondaire"]
             if pix is not None and not pix.isNull():
                 scaled = pix.scaledToHeight(h_cible, Qt.SmoothTransformation)
                 px = int(rc.center().x() - scaled.width() / 2 + dx)
@@ -941,9 +1056,11 @@ class WidgetVera(QWidget):
                     scaled,
                     px,
                     py,
-                    couleur_contour_sil,
-                    app.get("intensite_neon", 0.8),
+                    c1_hex,
+                    c2_hex,
+                    app.get("intensite_neon", 0.85),
                     pulse,
+                    mode_fil_neon,
                 )
             else:
                 zone_secours = QRectF(
@@ -1102,16 +1219,21 @@ class WidgetVera(QWidget):
                 int(rc.left() + 6), int(rc.top() + 12), int(rc.left() + 12), int(rc.top() + 6)
             )
 
-        # Contour neon
+        # Contour neon ou serpent "fil neon"
         ep = app.get("epaisseur_contour", 2)
         if ep > 0:
+            c1_hex = "#FF3B5C" if self.etat == "error" else app["couleur_contour"]
+            c2_hex = app["couleur_neon_secondaire"]
             c_contour = couleur_avec_alpha(
-                "#FF3B5C" if self.etat == "error" else app["couleur_contour"],
-                0.75 + 0.25 * app.get("intensite_neon", 0.8),
+                c1_hex,
+                0.35 if mode_fil_neon else (0.75 + 0.25 * app.get("intensite_neon", 0.8)),
             )
             painter.setPen(QPen(c_contour, ep))
             painter.setBrush(Qt.NoBrush)
             painter.drawPath(chemin_carte)
+
+            if mode_fil_neon:
+                self._dessiner_serpent_carte(painter, chemin_carte, rc, c1_hex, c2_hex)
 
 
 def main():

@@ -212,10 +212,14 @@ def main():
         print("[LANCEUR] Lancement de l'assistante vocale...")
 
     try:
-        code = subprocess.call(
-            [python_exe, os.path.join(DOSSIER_PROJET, "assistant.py")],
-            cwd=DOSSIER_PROJET,
-        )
+        while True:
+            code = subprocess.call(
+                [python_exe, os.path.join(DOSSIER_PROJET, "assistant.py")],
+                cwd=DOSSIER_PROJET,
+            )
+            if code != 42:
+                break
+            print("[LANCEUR] Redemarrage demande : relance de l'assistante vocale...")
     finally:
         nettoyer()
 

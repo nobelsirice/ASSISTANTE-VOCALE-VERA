@@ -28,11 +28,19 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [assetVersion, setAssetVersion] = useState(1);
   const [dragSlot, setDragSlot] = useState(null);
+  const [theme, setTheme] = useState(
+    () => localStorage.getItem("vera_admin_theme") || "dark"
+  );
 
   const [simState, setSimState] = useState("idle");
   const [simMessage, setSimMessage] = useState(
     "Bonjour maître Nobel, je suis prête à recevoir vos ordres."
   );
+
+  useEffect(() => {
+    document.body.classList.toggle("theme-light", theme === "light");
+    localStorage.setItem("vera_admin_theme", theme);
+  }, [theme]);
 
   const hasUnsavedChanges =
     config !== null && JSON.stringify(config) !== savedSnapshot;
@@ -212,6 +220,12 @@ export default function App() {
         </div>
         <div className="toolbar-actions">
           <button
+            onClick={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
+            title="Basculer entre le thème sombre et le thème clair"
+          >
+            {theme === "dark" ? "☀️ Mode clair" : "🌙 Mode sombre"}
+          </button>
+          <button
             className="btn-apply"
             onClick={handleApply}
             disabled={!config || busy}
@@ -375,7 +389,7 @@ export default function App() {
                   </div>
 
                   <div className="field">
-                    <label>Couleur néon principal (et silhouette)</label>
+                    <label>Couleur néon principal (coeur & silhouette)</label>
                     <div className="color-row">
                       <input
                         type="color"
@@ -399,7 +413,7 @@ export default function App() {
                   </div>
 
                   <div className="field">
-                    <label>Couleur néon secondaire</label>
+                    <label>Couleur néon secondaire (dégradé externe)</label>
                     <div className="color-row">
                       <input
                         type="color"
@@ -1168,6 +1182,23 @@ export default function App() {
                 <label className="checkbox-row">
                   <input
                     type="checkbox"
+                    checked={Boolean(config.fenetre.mode_fil_neon)}
+                    onChange={(e) =>
+                      updateField(
+                        (c) => (c.fenetre.mode_fil_neon = e.target.checked)
+                      )
+                    }
+                  />
+                  <span>
+                    <strong>Mode Fil néon (serpent lumineux animé)</strong> —
+                    Fait circuler un faisceau néon vif à cœur blanc (couleur
+                    principale → secondaire) autour de VÉRA
+                  </span>
+                </label>
+
+                <label className="checkbox-row">
+                  <input
+                    type="checkbox"
                     checked={Boolean(config.fenetre.mode_gif_seul)}
                     onChange={(e) =>
                       updateField((c) => {
@@ -1179,7 +1210,7 @@ export default function App() {
                   <span>
                     <strong>Mode GIF / Silhouette néon (sans cadre)</strong> —
                     Affiche uniquement le personnage flottant avec un contour
-                    néon épousant sa forme (couleur réglable dans Général)
+                    laser épousant sa forme image par image
                   </span>
                 </label>
 

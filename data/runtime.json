@@ -3,10 +3,10 @@
   "port": 8765,
   "token": "50d06cfc2ec14d5efc79315baa19dc62709679cb3f3a19f36d08de8382c6ab2e",
   "pids": {
-    "serveur": 37676,
-    "widget": 21752,
-    "lanceur": 9288,
-    "assistant": 25304
+    "serveur": 18076,
+    "widget": 11280,
+    "lanceur": 27600,
+    "assistant": 25752
   },
-  "started_at": 1795273777.559548
+  "started_at": 1795345283.20868
 }

@@ -1,8 +1,10 @@
 :root {
   --bg-main: #05070c;
-  --bg-panel: rgba(12, 17, 28, 0.85);
-  --bg-card: rgba(18, 26, 42, 0.9);
+  --bg-panel: rgba(12, 17, 28, 0.86);
+  --bg-card: rgba(18, 26, 42, 0.92);
   --bg-input: #080c14;
+  --bg-topbar: rgba(6, 9, 16, 0.9);
+  --grid-line: rgba(0, 229, 255, 0.035);
   --border-subtle: rgba(0, 229, 255, 0.28);
   --border-strong: #00e5ff;
   --accent-cyan: #00e5ff;
@@ -15,6 +17,23 @@
   --radius-sm: 8px;
 }
 
+body.theme-light {
+  --bg-main: #eef3f9;
+  --bg-panel: rgba(255, 255, 255, 0.92);
+  --bg-card: rgba(244, 248, 253, 0.96);
+  --bg-input: #ffffff;
+  --bg-topbar: rgba(255, 255, 255, 0.92);
+  --grid-line: rgba(0, 120, 212, 0.05);
+  --border-subtle: rgba(0, 118, 214, 0.26);
+  --border-strong: #0078d4;
+  --accent-cyan: #0078d4;
+  --accent-violet: #6b38fb;
+  --accent-green: #009e60;
+  --accent-red: #d92648;
+  --text-primary: #111827;
+  --text-secondary: #4b5563;
+}
+
 * {
   box-sizing: border-box;
 }
@@ -23,14 +42,15 @@ body {
   margin: 0;
   font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
   background:
-    radial-gradient(circle at 85% 10%, rgba(138, 92, 255, 0.16), transparent 40%),
-    radial-gradient(circle at 15% 85%, rgba(0, 229, 255, 0.14), transparent 45%),
-    linear-gradient(rgba(0, 229, 255, 0.03) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(0, 229, 255, 0.03) 1px, transparent 1px),
+    radial-gradient(circle at 85% 10%, rgba(138, 92, 255, 0.14), transparent 42%),
+    radial-gradient(circle at 15% 85%, rgba(0, 229, 255, 0.12), transparent 45%),
+    linear-gradient(var(--grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px),
     var(--bg-main);
   background-size: 100% 100%, 100% 100%, 36px 36px, 36px 36px, auto;
   color: var(--text-primary);
   min-height: 100vh;
+  transition: background-color 0.25s ease, color 0.25s ease;
 }
 
 .topbar {
@@ -42,10 +62,10 @@ body {
   justify-content: space-between;
   gap: 16px;
   padding: 14px 26px;
-  background: rgba(6, 9, 16, 0.88);
+  background: var(--bg-topbar);
   backdrop-filter: blur(14px);
   border-bottom: 1px solid var(--border-subtle);
-  box-shadow: 0 4px 30px rgba(0, 229, 255, 0.08);
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.12);
 }
 
 .brand {
@@ -68,20 +88,19 @@ body {
   font-size: 1.15rem;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  background: linear-gradient(90deg, #ffffff, var(--accent-cyan), var(--accent-violet));
+  background: linear-gradient(90deg, var(--text-primary), var(--accent-cyan), var(--accent-violet));
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
 }
 
 .badge-unsaved {
-  background: rgba(255, 184, 0, 0.15);
-  color: #ffd166;
-  border: 1px solid rgba(255, 184, 0, 0.5);
+  background: rgba(255, 184, 0, 0.18);
+  color: #d97706;
+  border: 1px solid rgba(255, 184, 0, 0.55);
   padding: 4px 12px;
   border-radius: 999px;
   font-size: 0.76rem;
   font-weight: 700;
-  letter-spacing: 0.04em;
 }
 
 .toolbar-actions {
@@ -95,7 +114,7 @@ button {
   font-size: 0.86rem;
   font-weight: 600;
   letter-spacing: 0.03em;
-  padding: 8px 15px;
+  padding: 8px 14px;
   border-radius: var(--radius-sm);
   border: 1px solid var(--border-subtle);
   background: var(--bg-card);
@@ -106,7 +125,7 @@ button {
 
 button:hover:not(:disabled) {
   border-color: var(--accent-cyan);
-  box-shadow: 0 0 14px rgba(0, 229, 255, 0.28);
+  box-shadow: 0 0 14px rgba(0, 229, 255, 0.25);
   transform: translateY(-1px);
 }
 
@@ -116,21 +135,21 @@ button:disabled {
 }
 
 button.btn-primary {
-  background: linear-gradient(135deg, #00b8d4, #00e5ff);
+  background: linear-gradient(135deg, #0099cc, #00e5ff);
   color: #050a12;
   border-color: transparent;
-  box-shadow: 0 0 16px rgba(0, 229, 255, 0.35);
+  box-shadow: 0 0 16px rgba(0, 229, 255, 0.3);
 }
 
 button.btn-apply {
-  background: linear-gradient(135deg, rgba(138, 92, 255, 0.35), rgba(0, 229, 255, 0.2));
+  background: linear-gradient(135deg, rgba(138, 92, 255, 0.28), rgba(0, 229, 255, 0.16));
   border-color: var(--accent-violet);
 }
 
 button.btn-danger {
-  background: rgba(255, 59, 92, 0.15);
+  background: rgba(255, 59, 92, 0.14);
   border-color: rgba(255, 59, 92, 0.55);
-  color: #ff8fa3;
+  color: var(--accent-red);
 }
 
 .banner-error {
@@ -139,7 +158,7 @@ button.btn-danger {
   border-radius: var(--radius-sm);
   background: rgba(255, 59, 92, 0.16);
   border: 1px solid var(--accent-red);
-  color: #ffd6de;
+  color: var(--text-primary);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -153,10 +172,9 @@ button.btn-danger {
   z-index: 50;
   padding: 11px 18px;
   border-radius: var(--radius-sm);
-  background: rgba(11, 34, 28, 0.94);
-  border: 1px solid var(--accent-green);
-  box-shadow: 0 0 18px rgba(0, 255, 163, 0.25);
-  color: #b9ffe5;
+  background: #0d2b23;
+  border: 1px solid #00ffa3;
+  color: #d1fae5;
   font-size: 0.88rem;
 }
 
@@ -192,17 +210,15 @@ button.btn-danger {
   background: linear-gradient(135deg, rgba(0, 229, 255, 0.2), rgba(138, 92, 255, 0.2));
   color: var(--accent-cyan);
   border-color: var(--accent-cyan);
-  box-shadow: 0 0 14px rgba(0, 229, 255, 0.2);
 }
 
 .panel {
-  position: relative;
   background: var(--bg-panel);
   backdrop-filter: blur(12px);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
   padding: 22px;
-  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.45);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.14);
 }
 
 .panel h2 {
@@ -276,10 +292,10 @@ button.btn-danger {
   gap: 10px;
   margin-bottom: 12px;
   cursor: pointer;
-  padding: 8px 10px;
+  padding: 10px 12px;
   border-radius: var(--radius-sm);
-  background: rgba(255, 255, 255, 0.02);
-  border: 1px solid rgba(0, 229, 255, 0.1);
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
 }
 
 .checkbox-row input {
@@ -300,13 +316,12 @@ button.btn-danger {
   border-radius: var(--radius-md);
   padding: 14px;
   text-align: center;
-  transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
+  transition: border-color 0.15s, background 0.15s;
 }
 
 .asset-card.dragover {
   border-color: var(--accent-cyan);
   background: rgba(0, 229, 255, 0.1);
-  box-shadow: 0 0 18px rgba(0, 229, 255, 0.25);
 }
 
 .asset-thumb {
@@ -333,7 +348,7 @@ button.btn-danger {
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
   padding: 20px;
-  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.45);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.14);
 }
 
 .preview-header {
@@ -353,11 +368,11 @@ button.btn-danger {
   position: relative;
   min-height: 340px;
   border-radius: var(--radius-md);
-  border: 1px solid rgba(0, 229, 255, 0.16);
+  border: 1px solid var(--border-subtle);
   background:
-    radial-gradient(circle at center, rgba(0, 229, 255, 0.06), transparent 70%),
-    linear-gradient(rgba(0, 229, 255, 0.04) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(0, 229, 255, 0.04) 1px, transparent 1px),
+    radial-gradient(circle at center, rgba(0, 229, 255, 0.08), transparent 70%),
+    linear-gradient(rgba(0, 229, 255, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 229, 255, 0.05) 1px, transparent 1px),
     #06080d;
   background-size: 100% 100%, 24px 24px, 24px 24px, auto;
   display: flex;
@@ -366,6 +381,7 @@ button.btn-danger {
   justify-content: flex-end;
   padding: 20px;
   overflow: hidden;
+  color: #f0f4ff;
 }
 
 .sim-controls {
@@ -401,5 +417,9 @@ button.btn-danger {
 }
 
 @keyframes spinArc {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes neonSnakeSpin {
   to { transform: rotate(360deg); }
 }

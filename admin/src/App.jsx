@@ -91,6 +91,29 @@ export default function App() {
     });
   };
 
+  const handleToggleVisibility = async () => {
+    if (!config) return;
+    const nouvelleVisibilite = config.fenetre.visible === false;
+    const maj = structuredClone(config);
+    maj.fenetre.visible = nouvelleVisibilite;
+    setConfig(maj);
+    setBusy(true);
+    try {
+      const saved = await api.saveConfig(maj);
+      setConfig(saved);
+      setSavedSnapshot(JSON.stringify(saved));
+      notify(
+        nouvelleVisibilite
+          ? "Widget VÉRA réaffiché à l'écran."
+          : "Widget VÉRA masqué."
+      );
+    } catch (err) {
+      setServerError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const handleSave = async () => {
     setBusy(true);
     try {
@@ -219,6 +242,15 @@ export default function App() {
           )}
         </div>
         <div className="toolbar-actions">
+          <button
+            onClick={handleToggleVisibility}
+            disabled={!config || busy}
+            title="Afficher ou masquer le widget VÉRA sur le bureau"
+          >
+            {config?.fenetre?.visible === false
+              ? "👁️ Afficher VÉRA"
+              : "🙈 Masquer VÉRA"}
+          </button>
           <button
             onClick={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
             title="Basculer entre le thème sombre et le thème clair"
@@ -1178,6 +1210,22 @@ export default function App() {
             {activeTab === "avance" && (
               <section className="panel">
                 <h2>Modes d'affichage & Paramètres avancés</h2>
+
+                <label className="checkbox-row">
+                  <input
+                    type="checkbox"
+                    checked={config.fenetre.visible !== false}
+                    onChange={(e) =>
+                      updateField((c) => {
+                        c.fenetre.visible = e.target.checked;
+                      })
+                    }
+                  />
+                  <span>
+                    <strong>Widget visible à l'écran</strong> — Décochez pour
+                    masquer VÉRA tout en la gardant active en arrière-plan
+                  </span>
+                </label>
 
                 <label className="checkbox-row">
                   <input

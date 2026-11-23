@@ -12,20 +12,20 @@
     "max_largeur_ratio": 0.6,
     "max_hauteur_ratio": 0.5,
     "ancrage": "bas_droite",
-    "marge_x": 91,
-    "marge_y": 176,
-    "x": 1469,
-    "y": 548,
-    "toujours_devant": false,
+    "marge_x": 24,
+    "marge_y": 24,
+    "x": 1536,
+    "y": 700,
+    "toujours_devant": true,
     "visible": true,
     "reduit": false,
     "mode_gif_seul": false,
-    "mode_fil_neon": true,
-    "taille_reduite": 80,
-    "marges_internes": 19
+    "mode_fil_neon": false,
+    "taille_reduite": 96,
+    "marges_internes": 16
   },
   "apparence": {
-    "couleur_fond": "#F1E1CA",
+    "couleur_fond": "#171717",
     "opacite_fond": 0.88,
     "image_fond": null,
     "opacite_image_fond": 0.65,
@@ -33,7 +33,7 @@
     "epaisseur_contour": 2,
     "couleur_neon": "#00E5FF",
     "couleur_neon_secondaire": "#8A5CFF",
-    "intensite_neon": 0.8,
+    "intensite_neon": 0.85,
     "rayon_angles": 18,
     "halo": {
       "actif": true,
@@ -55,13 +55,13 @@
     }
   },
   "personnage": {
-    "image_statique": "assets/custom_statique_02bb072e.png",
-    "gif_parole": "assets/custom_parole_0a9f40e7.gif",
+    "image_statique": "assets/custom_statique_d3438ced.png",
+    "gif_parole": "assets/custom_parole_48e0b19c.gif",
     "expressions": {
       "ecoute": null,
       "reflexion": null,
       "attente": null,
-      "erreur": "assets/custom_erreur_f94db398.gif"
+      "erreur": null
     },
     "taille_pourcent": 90,
     "decalage_x": 0,

@@ -1,7 +1,6 @@
 @echo off
 chcp 65001 >nul
-title VERA - Assistante personnelle
-
+title VÉRA - Initialisation et Demarrage
 cd /d "%~dp0"
 
 echo ==================================================
@@ -9,126 +8,115 @@ echo               DEMARRAGE DE VERA
 echo ==================================================
 echo.
 
-:: 1. Verification / creation de l'environnement virtuel Python 3.13
-if exist "venv\Scripts\python.exe" goto VENV_OK
-echo [1/8] Environnement virtuel introuvable. Creation avec Python 3.13...
-py -3.13 -m venv venv
-if errorlevel 1 (
-    echo.
-    echo ERREUR : Impossible de creer le venv avec Python 3.13.
-    echo Verifiez que Python 3.13 est bien installe sur ce PC.
-    pause
-    exit /b 1
+REM --------------------------------------------------
+REM [1/9] Verification de Python et de l'environnement virtuel
+REM --------------------------------------------------
+if not exist "venv\Scripts\python.exe" (
+    echo [1/9] Creation de l'environnement virtuel Python...
+    where py >nul 2>&1
+    if %errorlevel%==0 (
+        py -3 -m venv venv
+    ) else (
+        python -m venv venv
+    )
+    if not exist "venv\Scripts\python.exe" (
+        echo [ERREUR] Python 3 est introuvable sur cette machine.
+        echo Installez Python 3.11+ depuis https://www.python.org/downloads/
+        pause
+        exit /b 1
+    )
 )
-echo       Environnement virtuel cree avec succes.
-goto VERIF_DEPS
+for /f "tokens=2 delims= " %%v in ('"venv\Scripts\python.exe" --version 2^>^&1') do set PY_VER=%%v
+echo [1/9] Environnement virtuel Python %PY_VER% detecte.
 
-:VENV_OK
-echo [1/8] Environnement virtuel Python 3.13 detecte.
-
-:: 2. Verification des bibliotheques Python vocales
-:VERIF_DEPS
-set "PYTHON_VENV=%~dp0venv\Scripts\python.exe"
-echo [2/8] Verification des bibliotheques vocales Python...
-"%PYTHON_VENV%" -c "import speech_recognition, pyaudio, pyttsx3, piper, vosk" >nul 2>&1
-if not errorlevel 1 goto DEPS_OK
-
-echo       Installation des dependances manquantes depuis requirements.txt...
-"%PYTHON_VENV%" -m pip install --upgrade pip
-"%PYTHON_VENV%" -m pip install -r requirements.txt
-if errorlevel 1 (
-    echo.
-    echo ERREUR : L'installation des dependances a echoue.
-    echo Verifiez votre connexion Internet puis relancez ce fichier.
-    pause
-    exit /b 1
+REM --------------------------------------------------
+REM [2/9] Installation automatique des bibliotheques Python
+REM --------------------------------------------------
+echo [2/9] Verification des bibliotheques Python...
+"venv\Scripts\python.exe" -c "import speech_recognition, pyaudio, pyttsx3, piper, vosk, aiohttp, PySide6, PIL" >nul 2>&1
+if not %errorlevel%==0 (
+    echo       Installation des dependances manquantes ^(veuillez patienter^)...
+    "venv\Scripts\python.exe" -m pip install --upgrade pip --quiet
+    "venv\Scripts\python.exe" -m pip install SpeechRecognition pyaudio pyttsx3 piper-tts vosk aiohttp PySide6 pillow --quiet
 )
-echo       Dependances installees avec succes.
-goto VERIF_PIPER
+echo       Bibliotheques Python pretes.
 
-:DEPS_OK
-echo       Bibliotheques vocales deja installees.
-
-:: 3. Verification du modele vocal Piper (ItsRealFortune)
-:VERIF_PIPER
-echo [3/8] Verification du modele vocal Piper...
+REM --------------------------------------------------
+REM [3/9] Verification / Telechargement du modele vocal Piper
+REM --------------------------------------------------
+echo [3/9] Verification du modele vocal Piper...
 if not exist "voix" mkdir "voix"
-
 if not exist "voix\fortune-fr-multi.onnx" (
-    echo       Telechargement de fortune-fr-multi.onnx...
-    powershell -NoProfile -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -Uri 'https://huggingface.co/rhasspy/piper-voices/resolve/main/fr/fr_FR/itsrealfortune/high/fr_FR-itsrealfortune-high.onnx' -OutFile 'voix\fortune-fr-multi.onnx'"
-    if errorlevel 1 echo       AVERTISSEMENT : Telechargement impossible. VERA utilisera la voix de secours Windows.
+    echo       Telechargement de la voix francaise Piper...
+    powershell -NoProfile -Command "Invoke-WebRequest -Uri 'https://huggingface.co/rhasspy/piper-voices/resolve/main/fr/fr_FR/siwis/medium/fr_FR-siwis-medium.onnx' -OutFile 'voix\fortune-fr-multi.onnx'"
+    powershell -NoProfile -Command "Invoke-WebRequest -Uri 'https://huggingface.co/rhasspy/piper-voices/resolve/main/fr/fr_FR/siwis/medium/fr_FR-siwis-medium.onnx.json' -OutFile 'voix\model.onnx.json'"
 )
+echo       Modele vocal Piper pret.
 
-if not exist "voix\model.onnx.json" (
-    echo       Telechargement de model.onnx.json...
-    powershell -NoProfile -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -Uri 'https://huggingface.co/rhasspy/piper-voices/resolve/main/fr/fr_FR/itsrealfortune/high/fr_FR-itsrealfortune-high.onnx.json' -OutFile 'voix\model.onnx.json'"
-    if errorlevel 1 echo       AVERTISSEMENT : Telechargement de la configuration vocale impossible.
+REM --------------------------------------------------
+REM [4/9] Verification / Telechargement du modele Vosk (hors ligne)
+REM --------------------------------------------------
+echo [4/9] Verification du modele de reconnaissance vocale Vosk...
+if not exist "modele_vosk\am" (
+    echo       Telechargement du modele Vosk francais ^(~40 Mo^)...
+    powershell -NoProfile -Command "Invoke-WebRequest -Uri 'https://alphacephei.com/vosk/models/vosk-model-small-fr-0.22.zip' -OutFile 'vosk_tmp.zip'; Expand-Archive -Path 'vosk_tmp.zip' -DestinationPath 'vosk_extract' -Force; if (Test-Path 'modele_vosk') { Remove-Item 'modele_vosk' -Recurse -Force }; Move-Item 'vosk_extract\vosk-model-small-fr-0.22' 'modele_vosk'; Remove-Item 'vosk_tmp.zip','vosk_extract' -Recurse -Force"
 )
-
-if exist "voix\fortune-fr-multi.onnx" if exist "voix\model.onnx.json" (
-    echo       Modele vocal Piper pret.
-)
-
-:: 4. Verification du modele de reconnaissance vocale Vosk
-:VERIF_VOSK
-echo [4/8] Verification du modele de reconnaissance vocale Vosk...
-if exist "modele_vosk\am\final.mdl" goto VOSK_OK
-
-echo       Telechargement et installation du modele francais Vosk (~41 Mo)...
-"%PYTHON_VENV%" -c "import urllib.request, zipfile, shutil, os; urllib.request.urlretrieve('https://alphacephei.com/vosk/models/vosk-model-small-fr-0.22.zip', 'vosk-fr.zip'); zipfile.ZipFile('vosk-fr.zip').extractall('.'); shutil.rmtree('modele_vosk', ignore_errors=True); os.rename('vosk-model-small-fr-0.22', 'modele_vosk'); os.remove('vosk-fr.zip')"
-if errorlevel 1 (
-    echo       AVERTISSEMENT : Telechargement Vosk impossible. VERA utilisera Google en ligne.
-    goto VERIF_VISUEL_DEPS
-)
-echo       Modele Vosk installe avec succes.
-goto VERIF_VISUEL_DEPS
-
-:VOSK_OK
 echo       Modele Vosk pret.
 
-:: 5. Verification des bibliotheques widget et serveur (PySide6, aiohttp, Pillow)
-:VERIF_VISUEL_DEPS
-echo [5/8] Verification des bibliotheques graphiques et serveur...
-"%PYTHON_VENV%" -c "import PySide6, aiohttp, PIL" >nul 2>&1
-if not errorlevel 1 goto VISUEL_DEPS_OK
-
-echo       Installation de PySide6, aiohttp et Pillow...
-"%PYTHON_VENV%" -m pip install -r requirements.txt
-if errorlevel 1 (
-    echo       AVERTISSEMENT : Installation visuelle incomplete. VERA demarrera sans widget.
-    goto VERIF_DOSSIERS
-)
-echo       Bibliotheques graphiques installees.
-goto VERIF_DOSSIERS
-
-:VISUEL_DEPS_OK
-echo       Bibliotheques graphiques pretes.
-
-:: 6. Creation des dossiers et de la configuration par defaut
-:VERIF_DOSSIERS
-echo [6/8] Verification des dossiers et de la configuration...
-if not exist "config" mkdir "config"
+REM --------------------------------------------------
+REM [5/9] Verification des dossiers et de la configuration
+REM --------------------------------------------------
+echo [5/9] Verification des dossiers et de la configuration...
 if not exist "assets" mkdir "assets"
+if not exist "config" mkdir "config"
 if not exist "data" mkdir "data"
-"%PYTHON_VENV%" -c "from config_nobel import charger_config; charger_config()" >nul 2>&1
-if errorlevel 1 echo       AVERTISSEMENT : Initialisation configuration en echec.
+"venv\Scripts\python.exe" -c "from config_nobel import charger_config; charger_config()" >nul 2>&1
 echo       Dossiers et configuration prets.
 
-:: 7. Generation des ressources graphiques si absentes
-:VERIF_ASSETS
-echo [7/8] Verification des ressources graphiques de VERA...
-"%PYTHON_VENV%" generer_assets.py
-if errorlevel 1 echo       AVERTISSEMENT : Generation des assets impossible, dessin de secours actif.
+REM --------------------------------------------------
+REM [6/9] Verification des ressources graphiques par defaut
+REM --------------------------------------------------
+echo [6/9] Verification des ressources graphiques de VERA...
+if exist "generer_assets_defaut.py" (
+    "venv\Scripts\python.exe" generer_assets_defaut.py
+)
 
-:: 8. Lancement supervise de VERA (serveur + widget + assistante)
-:LANCEMENT
-echo [8/8] Lancement de VERA...
+REM --------------------------------------------------
+REM [7/9] Compilation de l'interface d'administration si absente
+REM --------------------------------------------------
+echo [7/9] Verification de l'interface d'administration...
+if not exist "admin\dist\index.html" (
+    if exist "admin\package.json" (
+        where npm >nul 2>&1
+        if %errorlevel%==0 (
+            echo       Compilation de l'interface d'administration React...
+            pushd admin
+            call npm install --silent
+            call npm run build
+            popd
+        )
+    )
+)
+echo       Interface d'administration prete.
+
+REM --------------------------------------------------
+REM [8/9] Creation de l'icone et du raccourci Bureau VERA
+REM --------------------------------------------------
+echo [8/9] Verification de l'icone et du raccourci Bureau...
+if exist "creer_raccourci_vera.py" (
+    "venv\Scripts\python.exe" creer_raccourci_vera.py
+)
+echo       Raccourci d'application pret.
+
+REM --------------------------------------------------
+REM [9/9] Lancement de VERA (Serveur + Widget + Assistante)
+REM --------------------------------------------------
+echo [9/9] Lancement de VERA...
 echo.
-"%PYTHON_VENV%" lanceur.py
+"venv\Scripts\python.exe" lanceur.py
 
 echo.
 echo ==================================================
 echo   VERA s'est arretee. Appuyez sur une touche...
 echo ==================================================
-pause
+pause >nul
